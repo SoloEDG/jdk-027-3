@@ -1,6 +1,7 @@
 import type { Dispatch, SetStateAction } from "react";
 import { Download, FileImage, Maximize2 } from "lucide-react";
 import type { BackgroundAsset, CanvasSize, Layer } from "@/shared/types";
+import { TEXT_BOX_WIDTH, lineHeightPx, textFont, wrapText } from "@/features/text-style/layout";
 
 type ExportPanelProps = { sizes: CanvasSize[]; selected: CanvasSize; onChange: Dispatch<SetStateAction<CanvasSize>>; onExport: () => void };
 
@@ -10,7 +11,13 @@ export function ExportPanel({ sizes, selected, onChange, onExport }: ExportPanel
 
 type PngExport = { background: BackgroundAsset; layers: Layer[]; size: CanvasSize };
 
-export function downloadPng({ background, layers, size }: PngExport) {
+const DESIGN_WIDTH = 1080;
+
+export async function downloadPng({ background, layers, size }: PngExport) {
+  // Make sure the same webfonts used on the canvas are ready before measuring/drawing.
+  if (typeof document !== "undefined" && document.fonts) {
+    try { await document.fonts.ready; } catch { /* keep going with fallbacks */ }
+  }
   const canvas = document.createElement("canvas");
   canvas.width = size.width;
   canvas.height = size.height;
@@ -30,21 +37,53 @@ export function downloadPng({ background, layers, size }: PngExport) {
     context.fillStyle = gradient;
     context.fillRect(0, 0, size.width, size.height);
   };
+
   const drawLayers = () => {
-    const scale = size.width / 1080;
+    // Text is laid out in the 1080px design space and then scaled, matching the live canvas.
+    const scale = size.width / DESIGN_WIDTH;
     layers.forEach((layer) => {
-    context.save();
-    context.translate((layer.x / 100) * size.width, (layer.y / 100) * size.height);
-    context.rotate((layer.rotation * Math.PI) / 180);
-    context.globalAlpha = layer.opacity;
-    context.fillStyle = layer.color;
-    context.textAlign = "center";
-    context.textBaseline = "middle";
-    context.font = `${layer.kind === "text" ? "700" : "400"} ${layer.fontSize * scale}px ${layer.kind === "text" ? "DM Sans" : "Georgia"}`;
-    context.fillText(layer.content, 0, 0);
-    context.restore();
+      context.save();
+      context.translate((layer.x / 100) * size.width, (layer.y / 100) * size.height);
+      context.rotate((layer.rotation * Math.PI) / 180);
+      context.scale(layer.scale, layer.scale);
+      context.globalAlpha = layer.opacity;
+
+      if (layer.kind === "text") {
+        const font = textFont(layer.fontWeight, layer.fontSize);
+        const lines = wrapText(layer.content, TEXT_BOX_WIDTH, font);
+        const lineHeight = lineHeightPx(layer.fontSize, layer.lineHeight);
+        const boxWidth = TEXT_BOX_WIDTH * scale;
+        const totalHeight = lines.length * lineHeight * scale;
+        const top = -totalHeight / 2 + (lineHeight * scale) / 2;
+        context.font = textFont(layer.fontWeight, layer.fontSize * scale);
+        context.textBaseline = "middle";
+        context.textAlign = layer.align;
+        context.lineJoin = "round";
+        context.miterLimit = 2;
+        const anchorX = layer.align === "left" ? -boxWidth / 2 : layer.align === "right" ? boxWidth / 2 : 0;
+        lines.forEach((line, index) => {
+          const y = top + index * lineHeight * scale;
+          if (layer.strokeWidth > 0) {
+            context.strokeStyle = layer.strokeColor;
+            context.lineWidth = layer.strokeWidth * scale;
+            context.strokeText(line, anchorX, y);
+          }
+          context.fillStyle = layer.fillColor;
+          context.fillText(line, anchorX, y);
+        });
+        context.restore();
+        return;
+      }
+
+      context.fillStyle = layer.color;
+      context.textAlign = "center";
+      context.textBaseline = "middle";
+      context.font = `400 ${layer.fontSize * scale}px Georgia, serif`;
+      context.fillText(layer.content, 0, 0);
+      context.restore();
     });
   };
+
   const save = () => canvas.toBlob((blob) => {
     if (!blob) return;
     const href = URL.createObjectURL(blob);

@@ -1,4 +1,4 @@
-import type { BackgroundAsset, CanvasSize, Layer, Preset, StickerAsset } from "./types";
+import type { BackgroundAsset, CanvasSize, Layer, Preset, StickerAsset, StyleCard, TextStyle } from "./types";
 
 export const canvasSizes: CanvasSize[] = [
   { id: "square", label: "正方形", width: 1080, height: 1080, ratio: "1:1" },
@@ -50,8 +50,40 @@ export const presets: Preset[] = [
   }
 ];
 
+/** Standalone style cards: they hold a snapshot of styles, never a layer reference. */
+export const defaultStyleCards: StyleCard[] = [
+  {
+    id: "card-headline",
+    label: "高光标题",
+    createdAt: 1,
+    style: { fillColor: "#fff7e8", strokeColor: "#1a1226", strokeWidth: 7, fontWeight: 800, lineHeight: 1.02, align: "center" }
+  },
+  {
+    id: "card-caption",
+    label: "轻描副标",
+    createdAt: 2,
+    style: { fillColor: "#ffd68a", strokeColor: "#4a2a0a", strokeWidth: 2, fontWeight: 500, lineHeight: 1.28, align: "center" }
+  }
+];
+
+const titleStyle = defaultStyleCards[0].style;
+const captionStyle = defaultStyleCards[1].style;
+const stickerBase: TextStyle = { fillColor: "#ffdc66", strokeColor: "#1a1226", strokeWidth: 0, fontWeight: 400, lineHeight: 1, align: "center" };
+
 export const defaultLayers: Layer[] = [
-  { id: "copy-1", kind: "text", name: "主文案", content: "今天也要发光", x: 50, y: 23, scale: 1, rotation: -2, color: "#fff7e8", fontSize: 56, opacity: 1 },
-  { id: "copy-2", kind: "text", name: "副文案", content: "small wins, big energy", x: 50, y: 33, scale: 0.58, rotation: 0, color: "#ffd68a", fontSize: 22, opacity: 0.92 },
-  { id: "sticker-1", kind: "sticker", name: "火花", content: "✦", x: 78, y: 73, scale: 1.1, rotation: -12, color: "#ffdc66", fontSize: 80, opacity: 1 }
+  {
+    id: "copy-1", kind: "text", name: "主文案", content: "今天也要发光", x: 50, y: 23, scale: 1, rotation: -2,
+    color: titleStyle.fillColor, fontSize: 92, opacity: 1,
+    ...titleStyle, styleId: "card-headline", styleOverrides: {}
+  },
+  {
+    id: "copy-2", kind: "text", name: "副文案", content: "small wins, big energy", x: 50, y: 34, scale: 0.58, rotation: 0,
+    color: captionStyle.fillColor, fontSize: 44, opacity: 0.92,
+    ...captionStyle, styleId: "card-caption", styleOverrides: {}
+  },
+  {
+    id: "sticker-1", kind: "sticker", name: "火花", content: "✦", x: 78, y: 73, scale: 1.1, rotation: -12,
+    color: "#ffdc66", fontSize: 150, opacity: 1,
+    ...stickerBase, styleId: null, styleOverrides: {}
+  }
 ];

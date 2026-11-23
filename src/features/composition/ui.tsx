@@ -1,11 +1,41 @@
-import type { Dispatch, SetStateAction } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, Copy, GripVertical, Minus, Plus, RotateCcw, Type } from "lucide-react";
 import { presets } from "@/shared/defaults";
 import type { BackgroundAsset, Layer, Preset } from "@/shared/types";
+import { TEXT_BOX_WIDTH, clearTextMeasureCache, lineHeightPx, textFont, wrapText } from "@/features/text-style/layout";
 
 type StageProps = { background: BackgroundAsset; layers: Layer[]; selectedId: string | null; onSelect: (id: string) => void; onChange: (id: string, patch: Partial<Layer>) => void };
 
 export function CanvasStage({ background, layers, selectedId, onSelect, onChange }: StageProps) {
+  const stageRef = useRef<HTMLDivElement>(null);
+  const [stageWidth, setStageWidth] = useState(620);
+
+  useEffect(() => {
+    const node = stageRef.current;
+    if (!node) return;
+    const observer = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width;
+      if (width) setStageWidth(width);
+    });
+    observer.observe(node);
+    setStageWidth(node.clientWidth || 620);
+    return () => observer.disconnect();
+  }, []);
+
+  const stageScale = stageWidth / 1080;
+  const [fontTick, setFontTick] = useState(0);
+
+  useEffect(() => {
+    if (typeof document === "undefined" || !document.fonts) return;
+    let cancelled = false;
+    document.fonts.ready.then(() => {
+      if (cancelled) return;
+      clearTextMeasureCache();
+      setFontTick((tick) => tick + 1);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
   const move = (event: React.PointerEvent<HTMLDivElement>, layer: Layer) => {
     if (layer.kind === "text" && event.button !== 0) return;
     const target = event.currentTarget.closest(".canvas-stage") as HTMLDivElement | null;
@@ -22,9 +52,40 @@ export function CanvasStage({ background, layers, selectedId, onSelect, onChange
     window.addEventListener("pointermove", handleMove);
     window.addEventListener("pointerup", finish);
   };
-  return <div className="canvas-stage" style={{ background: background.style }}>
+
+  return <div className="canvas-stage" ref={stageRef} style={{ background: background.style }}>
     <div className="grain" />
-    {layers.map((layer) => <div key={layer.id} className={`canvas-layer ${layer.kind} ${selectedId === layer.id ? "selected" : ""}`} onPointerDown={(event) => { onSelect(layer.id); move(event, layer); }} style={{ left: `${layer.x}%`, top: `${layer.y}%`, transform: `translate(-50%, -50%) rotate(${layer.rotation}deg) scale(${layer.scale})`, color: layer.color, fontSize: `${layer.fontSize}px`, opacity: layer.opacity }}>{layer.kind === "text" ? layer.content : layer.content}<span className="layer-handle" /></div>)}
+    {layers.map((layer) => {
+      const position = { left: `${layer.x}%`, top: `${layer.y}%`, opacity: layer.opacity };
+      const transform = `translate(-50%, -50%) rotate(${layer.rotation}deg) scale(${layer.scale})`;
+      const selectedClass = selectedId === layer.id ? "selected" : "";
+      const handlers = { onPointerDown: (event: React.PointerEvent<HTMLDivElement>) => { onSelect(layer.id); move(event, layer); } };
+      if (layer.kind === "text") {
+        const fontSize = layer.fontSize * stageScale;
+        const stroke = layer.strokeWidth > 0;
+        const lines = wrapText(layer.content, TEXT_BOX_WIDTH, textFont(layer.fontWeight, layer.fontSize));
+        const lineHeight = lineHeightPx(layer.fontSize, layer.lineHeight);
+        return <div key={layer.id} className={`canvas-layer text ${selectedClass}`} {...handlers} data-font-tick={fontTick} style={{
+          ...position,
+          transform,
+          width: `${TEXT_BOX_WIDTH * stageScale}px`,
+          color: layer.fillColor,
+          fontSize: `${fontSize}px`,
+          fontWeight: layer.fontWeight,
+          lineHeight: 1,
+          textAlign: layer.align,
+          WebkitTextStroke: stroke ? `${layer.strokeWidth * stageScale}px ${layer.strokeColor}` : undefined,
+          paintOrder: stroke ? "stroke fill" : undefined
+        }}>
+          {lines.map((line, index) => <span className="canvas-text-line" key={index} style={{ height: `${lineHeight * stageScale}px`, lineHeight: `${lineHeight * stageScale}px` }}>{line || "\u00a0"}</span>)}
+          <span className="layer-handle" />
+        </div>;
+      }
+      return <div key={layer.id} className={`canvas-layer sticker ${selectedClass}`} {...handlers} style={{ ...position, transform, color: layer.color, fontSize: `${layer.fontSize * stageScale}px` }}>
+        <span className="canvas-text-content">{layer.content}</span>
+        <span className="layer-handle" />
+      </div>;
+    })}
     <div className="stage-caption"><span>LIVE CANVAS</span><span>1080 × 1080</span></div>
   </div>;
 }
@@ -50,7 +111,7 @@ export function LayerPanel({ layers, selectedId, onSelect, onChange, onRemove, o
 type PresetStripProps = { activeId: string; onApply: (preset: Preset) => void };
 
 export function PresetStrip({ activeId, onApply }: PresetStripProps) {
-  return <section className="preset-strip"><div className="section-label"><span>版式预设</span><span className="muted">保留内容，更新构图</span></div><div className="preset-list">{presets.map((preset) => <button key={preset.id} className={`preset-card ${activeId === preset.id ? "active" : ""}`} onClick={() => onApply(preset)}><span className="preset-preview" style={{ background: preset.id === "headline" ? "linear-gradient(150deg,#42225f,#e17061)" : preset.id === "editorial" ? "linear-gradient(150deg,#604b38,#e4c58f)" : "linear-gradient(150deg,#1d6d68,#d5e9a2)" }}><span /><span /><span /></span><span className="preset-copy"><strong>{preset.label}</strong><small>{preset.description}</small></span><Copy size={14} /></button>)}</div></section>;
+  return <section className="preset-strip"><div className="section-label"><span>版式预设</span><span className="muted">保留内容与样式，更新构图</span></div><div className="preset-list">{presets.map((preset) => <button key={preset.id} className={`preset-card ${activeId === preset.id ? "active" : ""}`} onClick={() => onApply(preset)}><span className="preset-preview" style={{ background: preset.id === "headline" ? "linear-gradient(150deg,#42225f,#e17061)" : preset.id === "editorial" ? "linear-gradient(150deg,#604b38,#e4c58f)" : "linear-gradient(150deg,#1d6d68,#d5e9a2)" }}><span /><span /><span /></span><span className="preset-copy"><strong>{preset.label}</strong><small>{preset.description}</small></span><Copy size={14} /></button>)}</div></section>;
 }
 
 export function applyPreset(layers: Layer[], preset: Preset) {
